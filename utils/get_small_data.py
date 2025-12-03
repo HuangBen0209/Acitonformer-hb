@@ -13,7 +13,7 @@ FULL_FEATURE_DIR = os.path.join(PROJECT_ROOT, "data", "thumos", "i3d_features")
 SMALL_DATA_ROOT = "data/thumos_small"
 SMALL_TRAIN_ANNOT = f"{SMALL_DATA_ROOT}/annotations/thumos14_train_small.json"  # 单独训练集
 SMALL_TEST_ANNOT = f"{SMALL_DATA_ROOT}/annotations/thumos14_test_small.json"   # 单独测试集
-SMALL_MERGED_ANNOT = f"{SMALL_DATA_ROOT}/annotations/thumos14_small_merged.json"  # 合并集（新增）
+SMALL_MERGED_ANNOT = f"{SMALL_DATA_ROOT}/annotations/thumos14_small.json"  # 合并集（新增）
 SMALL_FEATURE_DIR = f"{SMALL_DATA_ROOT}/i3d_features"
 
 # 抽样配置（二选一，修改后注释掉另一个）
