@@ -11,12 +11,13 @@ FULL_ANNOTATION_PATH = os.path.join(PROJECT_ROOT, "data", "thumos", "annotations
 FULL_FEATURE_DIR = os.path.join(PROJECT_ROOT, "data", "thumos", "i3d_features")
 # 小数据集输出路径
 SMALL_DATA_ROOT = "data/thumos_small"
-SMALL_TRAIN_ANNOT = f"{SMALL_DATA_ROOT}/annotations/thumos14_train_small.json"
-SMALL_TEST_ANNOT = f"{SMALL_DATA_ROOT}/annotations/thumos14_test_small.json"
+SMALL_TRAIN_ANNOT = f"{SMALL_DATA_ROOT}/annotations/thumos14_train_small.json"  # 单独训练集
+SMALL_TEST_ANNOT = f"{SMALL_DATA_ROOT}/annotations/thumos14_test_small.json"   # 单独测试集
+SMALL_MERGED_ANNOT = f"{SMALL_DATA_ROOT}/annotations/thumos14_small_merged.json"  # 合并集（新增）
 SMALL_FEATURE_DIR = f"{SMALL_DATA_ROOT}/i3d_features"
 
 # 抽样配置（二选一，修改后注释掉另一个）
-SAMPLING_MODE = "COUNT"  # 抽样模式："COUNT"（按数量）或 "RATIO"（按比例）
+SAMPLING_MODE = "RATIO"  # 抽样模式："COUNT"（按数量）或 "RATIO"（按比例）
 # 模式1：按数量抽样（每个类别抽指定个数）
 TRAIN_NUM_PER_CLASS = 3    # 每个类别训练样本数
 TEST_NUM_PER_CLASS = 2     # 每个类别测试样本数
@@ -162,7 +163,7 @@ def sample_small_dataset(class_distribution, pool_type):
 
 
 def create_small_annotations():
-    """生成小数据集标注（含抽样日志）"""
+    """生成小数据集标注（含：单独训练集+单独测试集+合并集）"""
     train_pool, test_pool, class_map, class_dist = parse_full_annotation()
 
     # 1. 抽样小训练集（从原validation训练池）
@@ -195,23 +196,29 @@ def create_small_annotations():
           f"{'':<5} 原{len(test_pool)} → 抽{len(small_test_vids)}")
     print("="*80 + "\n")
 
-    # 构建并保存标注文件
+    # 构建标注数据（单独训练集+单独测试集+合并集）
     small_train_db = {vid: train_pool[vid] for vid in small_train_vids}
     small_test_db = {vid: test_pool[vid] for vid in small_test_vids}
+    small_merged_db = {**small_train_db, **small_test_db}  # 合并训练+测试样本（新增）
+
     # 保持原标注格式
     small_train_ann = {"version": "Thumos14-30fps", "database": small_train_db}
     small_test_ann = {"version": "Thumos14-30fps", "database": small_test_db}
+    small_merged_ann = {"version": "Thumos14-30fps", "database": small_merged_db}  # 合并集（新增）
 
-    # 创建输出目录
+    # 创建输出目录并保存
     os.makedirs(os.path.dirname(SMALL_TRAIN_ANNOT), exist_ok=True)
     with open(SMALL_TRAIN_ANNOT, "w", encoding="utf-8") as f:
         json.dump(small_train_ann, f, indent=2)
     with open(SMALL_TEST_ANNOT, "w", encoding="utf-8") as f:
         json.dump(small_test_ann, f, indent=2)
+    with open(SMALL_MERGED_ANNOT, "w", encoding="utf-8") as f:  # 保存合并集（新增）
+        json.dump(small_merged_ann, f, indent=2)
 
     print(f"✅ 小标注文件保存完成：")
-    print(f"   - 小训练集：{len(small_train_vids)} 个样本 → {SMALL_TRAIN_ANNOT}")
-    print(f"   - 小测试集：{len(small_test_vids)} 个样本 → {SMALL_TEST_ANNOT}")
+    print(f"   - 单独训练集：{len(small_train_vids)} 个样本 → {SMALL_TRAIN_ANNOT}")
+    print(f"   - 单独测试集：{len(small_test_vids)} 个样本 → {SMALL_TEST_ANNOT}")
+    print(f"   - 合并集（训练+测试）：{len(small_merged_db)} 个样本 → {SMALL_MERGED_ANNOT}")  # 新增
 
     return small_train_vids, small_test_vids
 
@@ -260,17 +267,19 @@ def main():
     try:
         # 步骤1：检查路径
         check_input_paths()
-        # 步骤2：生成小标注
+        # 步骤2：生成小标注（含合并集）
         small_train_vids, small_test_vids = create_small_annotations()
         # 步骤3：复制特征文件
         copy_small_features(small_train_vids, small_test_vids)
 
-        # 最终提示
+        # 最终提示（更新配置参考）
         print("\n" + "="*60)
         print("🎉 小数据集生成成功！")
         print(f"📁 小数据集目录：{SMALL_DATA_ROOT}")
-        print("💡 配置文件修改参考：")
-        print(f"   json_file: {SMALL_TRAIN_ANNOT}（训练） / {SMALL_TEST_ANNOT}（测试）")
+        print("💡 配置文件修改参考（推荐用合并集）：")
+        print(f"   训练+实时验证：json_file = {SMALL_MERGED_ANNOT}（模型自动筛选训练/验证样本）")
+        print(f"   单独训练：json_file = {SMALL_TRAIN_ANNOT}")
+        print(f"   单独测试：json_file = {SMALL_TEST_ANNOT}")
         print(f"   feat_folder: {SMALL_FEATURE_DIR}")
         print("="*60)
     except Exception as e:
