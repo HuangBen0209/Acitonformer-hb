@@ -13,3 +13,4 @@ libs/utils/*.egg-info/
 # （可选）忽略虚拟环境目录
 venv/
 env/
+utils/data/
