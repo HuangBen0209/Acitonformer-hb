@@ -17,11 +17,38 @@ from libs.datasets import make_dataset, make_data_loader
 from libs.modeling import make_meta_arch
 from libs.utils import valid_one_epoch, ANETdetection, fix_random_seed
 
+import sys
+from datetime import datetime
 
-################################################################################
+
 def main(args):
     """0. load config"""
-    # sanity check
+    # 添加日志文件
+    log_dir = os.path.split(args.ckpt)[0]
+    log_file = os.path.join(log_dir, f'eval_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt')
+
+    # 重定向输出到文件和控制台
+    class Logger:
+        def __init__(self, filename):
+            self.terminal = sys.stdout
+            self.log = open(filename, 'w')
+
+        def write(self, message):
+            self.terminal.write(message)
+            self.log.write(message)
+
+        def flush(self):
+            self.terminal.flush()
+            self.log.flush()
+
+    sys.stdout = Logger(log_file)
+
+    print(f"Evaluation started at: {datetime.now()}")
+    print(f"Config file: {args.config}")
+    print(f"Checkpoint: {args.ckpt}")
+    print("=" * 50)
+
+    # 原有代码继续...
     if os.path.isfile(args.config):
         cfg = load_config(args.config)
     else:
@@ -67,11 +94,9 @@ def main(args):
     """4. load ckpt"""
     print("=> loading checkpoint '{}'".format(ckpt_file))
     # load ckpt, reset epoch / best rmse
-    # 修复后：先解析成 device 对象，再取索引
-    device = torch.device(cfg['devices'][0])  # 解析 'cuda:0' 成 device 对象
     checkpoint = torch.load(
-        args.ckpt,
-        map_location=lambda storage, loc: storage.cuda(device.index)  # 用 device.index 取整数索引
+        ckpt_file,
+        map_location = lambda storage, loc: storage.cuda(int(cfg['devices'][0]))
     )
     # load ema model instead
     print("Loading from EMA model ...")
@@ -109,38 +134,21 @@ def main(args):
 
 ################################################################################
 if __name__ == '__main__':
-    """Entry Point"""  # 程序入口（当直接运行该脚本时，以下代码才会执行）
-
-    # 创建参数解析器，描述信息为“训练用于动作定位的点基Transformer”
+    """Entry Point"""
+    # the arg parser
     parser = argparse.ArgumentParser(
-        description='Train a point-based transformer for action localization')
-
-    # 1. 必选参数：配置文件路径（type=str 表示参数是字符串类型，metavar=DIR 是命令行显示别名）
+      description='Train a point-based transformer for action localization')
     parser.add_argument('config', type=str, metavar='DIR',
-                        help='path to a config file')  # 帮助信息：配置文件的路径
-
-    # 2. 必选参数：模型权重（checkpoint）路径（必选，需传入 .pth.tar 文件路径）
+                        help='path to a config file')
     parser.add_argument('ckpt', type=str, metavar='DIR',
-                        help='path to a checkpoint')  # 帮助信息：权重文件的路径
-
-    # 3. 可选参数：指定权重的epoch（默认-1，表示自动加载最新/最优权重）
+                        help='path to a checkpoint')
     parser.add_argument('-epoch', type=int, default=-1,
-                        help='checkpoint epoch')  # 帮助信息：权重对应的训练轮次
-
-    # 4. 可选参数：输出动作的最大数量（默认-1，表示不限制，按模型默认输出）
+                        help='checkpoint epoch')
     parser.add_argument('-t', '--topk', default=-1, type=int,
-                        help='max number of output actions (default: -1)')  # 帮助信息：输出动作的最大个数
-
-    # 5. 可选参数：仅保存预测结果，不进行评估（用于测试集，后续单独评估）
+                        help='max number of output actions (default: -1)')
     parser.add_argument('--saveonly', action='store_true',
                         help='Only save the ouputs without evaluation (e.g., for test set)')
-    # 注：action='store_true' 表示只要命令行加了这个参数，就设为 True，不加则为 False
-
-    # 6. 可选参数：打印频率（默认每10个迭代打印一次日志）
     parser.add_argument('-p', '--print-freq', default=10, type=int,
-                        help='print frequency (default: 10 iterations)')  # 帮助信息：日志打印频率
-
-    # 解析命令行传入的参数，存入 args 对象（后续 main 函数会使用这些参数）
+                        help='print frequency (default: 10 iterations)')
     args = parser.parse_args()
-    # 调用主函数，传入解析后的参数
     main(args)

@@ -1,4 +1,4 @@
-
+小样本
 训练：
 python ./train.py ./configs/thumos_i3d_small.yaml --output reproduce
 查看训练：
@@ -6,4 +6,10 @@ tensorboard --logdir=./ckpt/thumos_i3d_reproduce/logs
 评估：
 python ./eval.py ./configs/thumos_i3d_small.yaml ./ckpt/thumos_i3d_small_reproduce
 
-python ./eval.py ./configs/thumos_i3d_small.yaml D:/Code/DeepLearning/TAL/actionformer/actionformer-hb/ckpt/thumos_i3d_small_reproduce/epoch_035.pth.tar
+
+所有样本
+python ./train.py ./configs/thumos_i3d.yaml --output reproduce
+查看训练：
+tensorboard --logdir=./ckpt/thumos_i3d_reproduce/logs
+评估：
+python ./eval.py ./configs/thumos_i3d.yaml ./ckpt/thumos_i3d_reproduce

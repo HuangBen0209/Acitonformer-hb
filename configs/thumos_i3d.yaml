@@ -1,58 +1,50 @@
-# ====================== 数据集相关 ======================
-dataset_name: thumos          # 数据集名字，仅作打日志/存权重时的文件夹名
-train_split: ['validation']   # THUMOS14 官方把 validation 当做训练集，test 做测试集
-val_split: ['test']           # 所以这里看起来“反”了，其实是照官方走
+dataset_name: thumos
+train_split: ['validation']
+val_split: ['test']
 
-devices: [0]      # 列表，第 1 块卡
+devices: [0]
 
 dataset:
-  json_file: ./data/thumos/annotations/thumos14.json   # 标签文件，里面对每条视频存了时间戳、类别、帧数等信息
-  feat_folder: ./data/thumos/i3d_features            # 预提取好的 I3D 特征路径，每个视频一个 .npy
-  file_prefix: ~        # 如果特征文件名需要加前缀，可填；~ 表示无
-  file_ext: .npy        # 特征文件后缀
-  num_classes: 20       # THUMOS14 的 20 类动作（背景类不算在内）
-  input_dim: 2048       # I3D 特征维度，RGB 与 Flow 各 1024，拼接后 2048
-  feat_stride: 4        # 特征下采样率：原始视频 30fps -> 特征每 4 帧取 1 帧，约 7.5fps
-  num_frames: 16        # 模型一次看的“时域窗口”长度（单位：特征帧），即 16*4=64 原视频帧
-  trunc_thresh: 0.5     # 数据增强：若随机截断后剩余部分 < 0.5 则丢弃，防止切出来的片段太短
-  crop_ratio: [0.9, 1.0]# 随机时域 crop 比例，在 90%~100% 之间均匀采样，再缩放回固定长度
-  max_seq_len: 2304     # 单条视频最多取 2304 帧特征（约 307 秒），超长则滑动窗口切分，防止显存爆
+  json_file: ./data/thumos/annotations/thumos14.json
+  feat_folder: ./data/thumos/i3d_features
+  file_prefix: ~
+  file_ext: .npy
+  num_classes: 20
+  input_dim: 2048
+  feat_stride: 4
+  num_frames: 16
+  trunc_thresh: 0.5
+  crop_ratio: [0.9, 1.0]
+  max_seq_len: 2304
 
-# ====================== 模型结构 ======================
 model:
-  fpn_type: identity        # 时域 FPN 类型；identity 表示不用金字塔，直接原尺度特征
-  max_buffer_len_factor: 6. # 自注意力缓存长度 = 6 * 2304，保证长视频不溢出
-  n_mha_win_size: 19        # 滑动窗口 Transformer 的窗口大小（奇数），降低长序列计算量
+  fpn_type: identity
+  max_buffer_len_factor: 6.
+  n_mha_win_size: 19
 
-# ====================== 优化器 ======================
+
 opt:
-  learning_rate: 0.0001   # 初始 lr，Transformer 类模型常用 1e-4 起步
-  epochs: 30              # 训练总轮数
-  weight_decay: 0.05      # AdamW 的 weight_decay，较大值可缓解过拟合
+  learning_rate: 0.0001
+  epochs: 50
+  weight_decay: 0.05
 
-# ====================== 数据加载 ======================
 loader:
-  batch_size: 2           # 单卡 batch=2，显存占用≈11G（2080Ti 可跑）；多卡可再调大
+  batch_size: 8
 
-# ====================== 训练阶段超参 ======================
 train_cfg:
-  init_loss_norm: 100         # 训练初期把 loss 放大 100 倍，防止梯度太小，warmup 后逐步降回 1
-  clip_grad_l2norm: 1.0       # 梯度裁剪阈值，防止梯度爆炸
-  cls_prior_prob: 0.01        # 分类分支初始化偏置，使初始正负样本比例≈1:99，缓解样本不平衡
-  center_sample: radius       # 如何定义“正样本”：radius 表示只把距真值中心 1.5 单位以内的 anchor 当做正
-  center_sample_radius: 1.5   # 上面 radius 的具体值，单位是“特征帧”
+  init_loss_norm: 100
+  clip_grad_l2norm: 1.0
+  cls_prior_prob: 0.01
+  center_sample: radius
+  center_sample_radius: 1.5
 
-# ====================== 测试/推理 ======================
 test_cfg:
-  voting_thresh: 0.7      # 软-NMS 前，同一动作类别若有多段高度重叠，先投票合并，IoU 阈值 0.7
-  pre_nms_topk: 2000      # 每类保留得分前 2000 段再做 NMS，减小计算量
-  max_seg_num: 200        # 最终每类最多输出 200 段结果
-  min_score: 0.001        # 得分低于 0.001 的直接丢弃，减小提交文件体积
-  multiclass_nms: True    # 是否做“多类”NMS；True 则类间独立 NMS，False 则类间一起 NMS
-  # 下面两行被注释掉，表示“不使用外部分类得分融合”
+  voting_thresh: 0.7
+  pre_nms_topk: 2000
+  max_seg_num: 200
+  min_score: 0.001
+  multiclass_nms: True    #
   # multiclass_nms: False
   # ext_score_file: ./data/thumos/annotations/thumos14_cls_scores.pkl
 
-
-# ====================== 输出目录 ======================
-output_folder: ./ckpt/    # 权重、日志、tensorboard、预测结果都会塞到这里
+output_folder: ./ckpt/
