@@ -21,6 +21,8 @@ model:
   fpn_type: identity
   max_buffer_len_factor: 6.
   n_mha_win_size: 19
+  use_abs_pe: True
+  use_rel_pe: false
 
 
 opt:

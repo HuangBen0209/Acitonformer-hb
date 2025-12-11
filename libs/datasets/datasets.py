@@ -11,7 +11,7 @@ def register_dataset(name):
 
 def make_dataset(name, is_training, split, **kwargs):
    """
-       A simple dataset builder
+       数据集构造器
    """
    dataset = datasets[name](is_training, split, **kwargs)
    return dataset

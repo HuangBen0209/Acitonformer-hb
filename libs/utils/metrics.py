@@ -213,10 +213,10 @@ class ANETdetection(object):
             # did not check dtype here, can accept both numpy / pytorch tensors
             preds = pd.DataFrame({
                 'video-id' : preds['video-id'],
-                't-start' : preds['t-start'].tolist(),
-                't-end': preds['t-end'].tolist(),
-                'label': preds['label'].tolist(),
-                'score': preds['score'].tolist()
+                't-start' : preds['t-start'],
+                't-end': preds['t-end'],
+                'label': preds['label'],
+                'score': preds['score']
             })
         # always reset ap
         self.ap = None

@@ -1,0 +1,56 @@
+
+?????
+python ./train.py ./configs/thumos_i3d_small.yaml --output reproduce
+???????
+tensorboard --logdir=./ckpt/thumos_i3d_reproduce/logs
+??????
+python ./eval.py ./configs/thumos_i3d_small.yaml ./ckpt/thumos_i3d_small_reproduce
+
+
+python ./train.py ./configs/thumos_i3d_small.yaml --output reproduce_bs_2_abs_pos
+python ./eval.py ./configs/thumos_i3d_small.yaml ./ckpt/thumos_i3d_small_reproduce_bs_2_abs_pos
+
+
+python ./eval.py ./configs/thumos_i3d_small.yaml D:/Code/DeepLearning/TAL/actionformer/actionformer-hb/ckpt/thumos_i3d_small_reproduce/epoch_035.pth.tar
+
+python ./train.py ./configs/thumos_i3d.yaml --output reproduce_bs_4_epoch_55
+python ./eval.py ./configs/thumos_i3d_small.yaml ./ckpt/thumos_i3d_reproduce_bs_4_epoch_55
+
+python ./train.py ./configs/thumos_i3d.yaml --output reproduce_bs_8_epoch_55
+python ./eval.py ./configs/thumos_i3d_small.yaml ./ckpt/thumos_i3d_reproduce_bs_8_epoch_55
+
+python ./train.py ./configs/thumos_i3d.yaml --output reproduce_bs_8_epoch_65
+python ./eval.py ./configs/thumos_i3d_small.yaml ./ckpt/thumos_i3d_reproduce_bs_8_epoch_65
+
+----???
+
+for bs in 2 4 8; do
+  for epoch in 35 45 55 65 75 85 95; do
+    echo "???????????: bs=$bs, epoch=$epoch"
+
+    # ?????????????
+    cp ./configs/thumos_i3d.yaml ./configs/thumos_i3d_bs${bs}_epoch${epoch}.yaml
+
+    # ???sed???????????��?batch_size??epoch
+    # ??????????YAML??????????????????
+    # loader:
+    #   batch_size: 8
+    # opt:
+    #   epochs: 55
+    sed -i "s/batch_size: [0-9]*/batch_size: $bs/" ./configs/thumos_i3d_bs${bs}_epoch${epoch}.yaml
+    sed -i "s/epochs: [0-9]*/epochs: $epoch/" ./configs/thumos_i3d_bs${bs}_epoch${epoch}.yaml
+
+    echo "Training: bs=$bs, epoch=$epoch"
+
+  done
+done
+
+
+---????
+for bs in 2 4 8; do
+  for epoch in 35 45 55 65 75 85 95; do
+    echo "Evaluating: bs=$bs, epoch=$epoch"
+    python ./eval.py ./configs/thumos_i3d.yaml ./ckpt/thumos_i3d_bs${bs}_epoch${epoch}_reproduce_bs_${bs}_epoch_${epoch}
+  done
+done
+
