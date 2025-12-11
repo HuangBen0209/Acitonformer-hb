@@ -1,18 +1,15 @@
-# python imports
 import argparse
 import os
 import time
 import datetime
 from pprint import pprint
-
-# torch imports
 import torch
 import torch.nn as nn
 import torch.utils.data
-# for visualization
+# 用于可视化
 from torch.utils.tensorboard import SummaryWriter
 
-# our code
+# 我们的代码
 from libs.core import load_config
 from libs.datasets import make_dataset, make_data_loader
 from libs.modeling import make_meta_arch
@@ -23,117 +20,117 @@ from libs.utils import (train_one_epoch, valid_one_epoch, ANETdetection,
 
 ################################################################################
 def main(args):
-    """main function that handles training / inference"""
+    """主函数，处理训练/推理过程"""
 
-    """1. setup parameters / folders"""
-    # parse args
+    """1. 设置参数/文件夹"""
+    # 解析命令行参数
     args.start_epoch = 0
     if os.path.isfile(args.config):
         cfg = load_config(args.config)
     else:
-        raise ValueError("Config file does not exist.")
+        raise ValueError("配置文件不存在。")
     pprint(cfg)
 
-    # prep for output folder (based on time stamp)
+    # 准备输出文件夹（基于时间戳）
     if not os.path.exists(cfg['output_folder']):
         os.mkdir(cfg['output_folder'])
     cfg_filename = os.path.basename(args.config).replace('.yaml', '')
     if len(args.output) == 0:
         ts = datetime.datetime.fromtimestamp(int(time.time()))
         ckpt_folder = os.path.join(
-            cfg['output_folder'], cfg_filename + '_' + str(ts))
+            str(cfg['output_folder']), str(cfg_filename + '_' + str(ts)))
     else:
         ckpt_folder = os.path.join(
-            cfg['output_folder'], cfg_filename + '_' + str(args.output))
+            str(cfg['output_folder']), str(cfg_filename + '_' + str(args.output)))
     if not os.path.exists(ckpt_folder):
         os.mkdir(ckpt_folder)
-    # tensorboard writer
+    # 创建TensorBoard写入器
     tb_writer = SummaryWriter(os.path.join(ckpt_folder, 'logs'))
 
-    # fix the random seeds (this will fix everything)
+    # 固定随机种子（这会固定所有随机性）
     rng_generator = fix_random_seed(cfg['init_rand_seed'], include_cuda=True)
 
-    # re-scale learning rate / # workers based on number of GPUs
+    # 根据GPU数量重新调整学习率/工作进程数
     cfg['opt']["learning_rate"] *= len(cfg['devices'])
     cfg['loader']['num_workers'] *= len(cfg['devices'])
-
-    """2. create dataset / dataloader"""
+    """2. 创建数据集/数据加载器"""
     train_dataset = make_dataset(
         cfg['dataset_name'], True, cfg['train_split'], **cfg['dataset']
     )
-    # update cfg based on dataset attributes (fix to epic-kitchens)
+    # 根据数据集属性更新cfg（针对epic-kitchens数据集）
     train_db_vars = train_dataset.get_attributes()
     cfg['model']['train_cfg']['head_empty_cls'] = train_db_vars['empty_label_ids']
 
-    # data loaders
+    # 数据加载器
     train_loader = make_data_loader(
         train_dataset, True, rng_generator, **cfg['loader'])
 
-    """3. create model, optimizer, and scheduler"""
-    # model
+    """3. 创建模型、优化器和调度器"""
+    # 模型
     model = make_meta_arch(cfg['model_name'], **cfg['model'])
-    # not ideal for multi GPU training, ok for now
+    print(f"--------------------cfg['model_name'] = {cfg['model_name']}-------------------------")
+    # 对于多GPU训练来说不是最理想的方法，但暂时可用
     model = nn.DataParallel(model, device_ids=cfg['devices'])
-    # optimizer
+    # 优化器
     optimizer = make_optimizer(model, cfg['opt'])
-    # schedule
+    # 调度器
     num_iters_per_epoch = len(train_loader)
     scheduler = make_scheduler(optimizer, cfg['opt'], num_iters_per_epoch)
 
-    # enable model EMA
-    print("Using model EMA ...")
+    # 启用模型EMA（指数移动平均）
+    print("使用模型EMA...")
     model_ema = ModelEma(model)
 
-    """4. Resume from model / Misc"""
-    # resume from a checkpoint?
+    """4. 从检查点恢复/其他杂项"""
+    # 从检查点恢复？
     if args.resume:
         if os.path.isfile(args.resume):
-            # load ckpt, reset epoch / best rmse
+            # 加载检查点，重置epoch/最佳RMSE
             checkpoint = torch.load(args.resume,
-                map_location = lambda storage, loc: storage.cuda(
+                map_location=lambda storage, loc: storage.cuda(
                     cfg['devices'][0]))
             args.start_epoch = checkpoint['epoch']
             model.load_state_dict(checkpoint['state_dict'])
             model_ema.module.load_state_dict(checkpoint['state_dict_ema'])
-            # also load the optimizer / scheduler if necessary
+            # 如果需要，也加载优化器/调度器
             optimizer.load_state_dict(checkpoint['optimizer'])
             scheduler.load_state_dict(checkpoint['scheduler'])
-            print("=> loaded checkpoint '{:s}' (epoch {:d}".format(
+            print("=> 加载检查点 '{:s}' (epoch {:d}".format(
                 args.resume, checkpoint['epoch']
             ))
             del checkpoint
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            print("=> 在'{}'未找到检查点".format(args.resume))
             return
 
-    # save the current config
+    # 保存当前配置
     with open(os.path.join(ckpt_folder, 'config.txt'), 'w') as fid:
         pprint(cfg, stream=fid)
         fid.flush()
 
-    """4. training / validation loop"""
-    print("\nStart training model {:s} ...".format(cfg['model_name']))
+    """5. 训练/验证循环"""
+    print("\n开始训练模型 {:s} ...".format(cfg['model_name']))
 
-    # start training
+    # 开始训练
     max_epochs = cfg['opt'].get(
         'early_stop_epochs',
         cfg['opt']['epochs'] + cfg['opt']['warmup_epochs']
     )
     for epoch in range(args.start_epoch, max_epochs):
-        # train for one epoch
+        # 训练一个epoch
         train_one_epoch(
             train_loader,
             model,
             optimizer,
             scheduler,
             epoch,
-            model_ema = model_ema,
-            clip_grad_l2norm = cfg['train_cfg']['clip_grad_l2norm'],
+            model_ema=model_ema,
+            clip_grad_l2norm=cfg['train_cfg']['clip_grad_l2norm'],
             tb_writer=tb_writer,
             print_freq=args.print_freq
         )
 
-        # save ckpt once in a while
+        # 定期保存检查点
         if (
             ((epoch + 1) == max_epochs) or
             ((args.ckpt_freq > 0) and ((epoch + 1) % args.ckpt_freq == 0))
@@ -153,26 +150,26 @@ def main(args):
                 file_name='epoch_{:03d}.pth.tar'.format(epoch + 1)
             )
 
-    # wrap up
+    # 收尾工作
     tb_writer.close()
-    print("All done!")
+    print("全部完成！")
     return
 
 ################################################################################
 if __name__ == '__main__':
-    """Entry Point"""
-    # the arg parser
+    """程序入口点"""
+    # 参数解析器
     parser = argparse.ArgumentParser(
-      description='Train a point-based transformer for action localization')
+        description='训练一个基于点的Transformer用于动作定位')
     parser.add_argument('config', metavar='DIR',
-                        help='path to a config file')
+                        help='配置文件路径')
     parser.add_argument('-p', '--print-freq', default=10, type=int,
-                        help='print frequency (default: 10 iterations)')
+                        help='打印频率（默认：每10次迭代）')
     parser.add_argument('-c', '--ckpt-freq', default=5, type=int,
-                        help='checkpoint frequency (default: every 5 epochs)')
+                        help='检查点保存频率（默认：每5个epoch）')
     parser.add_argument('--output', default='', type=str,
-                        help='name of exp folder (default: none)')
+                        help='实验文件夹名称（默认：无）')
     parser.add_argument('--resume', default='', type=str, metavar='PATH',
-                        help='path to a checkpoint (default: none)')
+                        help='检查点路径（默认：无）')
     args = parser.parse_args()
     main(args)

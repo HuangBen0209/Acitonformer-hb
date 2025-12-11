@@ -10,27 +10,24 @@ def sigmoid_focal_loss(
     reduction: str = "none",
 ) -> torch.Tensor:
     """
-    Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
-    Taken from
+    RetinaNet 中用于密集检测的损失函数：https://arxiv.org/abs/1708.02002 。
+    代码取自
     https://github.com/facebookresearch/fvcore/blob/master/fvcore/nn/focal_loss.py
-    # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+    # 版权所有 (c) Facebook, Inc. 及其附属机构。保留所有权利。
 
-    Args:
-        inputs: A float tensor of arbitrary shape.
-                The predictions for each example.
-        targets: A float tensor with the same shape as inputs. Stores the binary
-                 classification label for each element in inputs
-                (0 for the negative class and 1 for the positive class).
-        alpha: (optional) Weighting factor in range (0,1) to balance
-                positive vs negative examples. Default = 0.25.
-        gamma: Exponent of the modulating factor (1 - p_t) to
-               balance easy vs hard examples.
-        reduction: 'none' | 'mean' | 'sum'
-                 'none': No reduction will be applied to the output.
-                 'mean': The output will be averaged.
-                 'sum': The output will be summed.
-    Returns:
-        Loss tensor with the reduction option applied.
+    参数：
+        inputs：任意形状的浮点张量。
+                每个样本的预测结果。
+        targets：与 inputs 形状相同的浮点张量。存储每个元素在 inputs 中的二分类标签
+                （负类为 0，正类为 1）。
+        alpha：（可选）权重因子，范围在 (0,1) 内，用于平衡正负样本。默认值为 0.25。
+        gamma：调节因子 (1 - p_t) 的指数，用于平衡易分类和难分类样本。
+        reduction：'none' | 'mean' | 'sum'
+                 'none'：不对输出应用任何归约操作。
+                 'mean'：将输出取平均值。
+                 'sum'：将输出求和。
+    返回：
+        应用了归约选项的损失张量。
     """
     inputs = inputs.float()
     targets = targets.float()
@@ -47,9 +44,7 @@ def sigmoid_focal_loss(
         loss = loss.mean()
     elif reduction == "sum":
         loss = loss.sum()
-
     return loss
-
 
 @torch.jit.script
 def ctr_giou_loss_1d(
@@ -59,34 +54,30 @@ def ctr_giou_loss_1d(
     eps: float = 1e-8,
 ) -> torch.Tensor:
     """
-    Generalized Intersection over Union Loss (Hamid Rezatofighi et. al)
+    通用交并比损失（Generalized Intersection over Union Loss，Hamid Rezatofighi 等人）
     https://arxiv.org/abs/1902.09630
-
-    This is an implementation that assumes a 1D event is represented using
-    the same center point with different offsets, e.g.,
-    (t1, t2) = (c - o_1, c + o_2) with o_i >= 0
-
-    Reference code from
+    这是一个假设一维事件使用相同的中心点和不同的偏移量来表示的实现，例如，
+    (t1, t2) = (c - o_1, c + o_2)，其中 o_i >= 0
+    参考代码来自
     https://github.com/facebookresearch/fvcore/blob/master/fvcore/nn/giou_loss.py
-
-    Args:
-        input/target_offsets (Tensor): 1D offsets of size (N, 2)
-        reduction: 'none' | 'mean' | 'sum'
-                 'none': No reduction will be applied to the output.
-                 'mean': The output will be averaged.
-                 'sum': The output will be summed.
-        eps (float): small number to prevent division by zero
+    参数：
+        input/target_offsets (Tensor)：大小为 (N, 2) 的一维偏移量。
+        reduction：'none' | 'mean' | 'sum'
+                 'none'：不对输出应用任何归约操作。
+                 'mean'：将输出取平均值。
+                 'sum'：将输出求和。
+        eps (float)：一个小数，用于防止除以零。
     """
     input_offsets = input_offsets.float()
     target_offsets = target_offsets.float()
-    # check all 1D events are valid
-    assert (input_offsets >= 0.0).all(), "predicted offsets must be non-negative"
-    assert (target_offsets >= 0.0).all(), "GT offsets must be non-negative"
+    # 检查所有一维事件是否有效
+    assert (input_offsets >= 0.0).all(), "预测的偏移量必须是非负的"
+    assert (target_offsets >= 0.0).all(), "GT 偏移量必须是非负的"
 
     lp, rp = input_offsets[:, 0], input_offsets[:, 1]
     lg, rg = target_offsets[:, 0], target_offsets[:, 1]
 
-    # intersection key points
+    # 交集关键点
     lkis = torch.min(lp, lg)
     rkis = torch.min(rp, rg)
 
@@ -95,7 +86,7 @@ def ctr_giou_loss_1d(
     unionk = (lp + rp) + (lg + rg) - intsctk
     iouk = intsctk / unionk.clamp(min=eps)
 
-    # giou is reduced to iou in our setting, skip unnecessary steps
+    # 在我们的设置中，giou 简化为 iou，跳过不必要的步骤
     loss = 1.0 - iouk
 
     if reduction == "mean":
@@ -113,34 +104,33 @@ def ctr_diou_loss_1d(
     eps: float = 1e-8,
 ) -> torch.Tensor:
     """
-    Distance-IoU Loss (Zheng et. al)
+    距离交并比损失（Distance-IoU Loss，Zheng 等人）
     https://arxiv.org/abs/1911.08287
 
-    This is an implementation that assumes a 1D event is represented using
-    the same center point with different offsets, e.g.,
-    (t1, t2) = (c - o_1, c + o_2) with o_i >= 0
+    这是一个假设一维事件使用相同的中心点和不同的偏移量来表示的实现，例如，
+    (t1, t2) = (c - o_1, c + o_2)，其中 o_i >= 0
 
-    Reference code from
+    参考代码来自
     https://github.com/facebookresearch/fvcore/blob/master/fvcore/nn/giou_loss.py
 
-    Args:
-        input/target_offsets (Tensor): 1D offsets of size (N, 2)
-        reduction: 'none' | 'mean' | 'sum'
-                 'none': No reduction will be applied to the output.
-                 'mean': The output will be averaged.
-                 'sum': The output will be summed.
-        eps (float): small number to prevent division by zero
+    参数：
+        input/target_offsets (Tensor)：大小为 (N, 2) 的一维偏移量。
+        reduction：'none' | 'mean' | 'sum'
+                 'none'：不对输出应用任何归约操作。
+                 'mean'：将输出取平均值。
+                 'sum'：将输出求和。
+        eps (float)：一个小数，用于防止除以零。
     """
     input_offsets = input_offsets.float()
     target_offsets = target_offsets.float()
-    # check all 1D events are valid
-    assert (input_offsets >= 0.0).all(), "predicted offsets must be non-negative"
-    assert (target_offsets >= 0.0).all(), "GT offsets must be non-negative"
+    # 检查所有一维事件是否有效
+    assert (input_offsets >= 0.0).all(), "预测的偏移量必须是非负的"
+    assert (target_offsets >= 0.0).all(), "GT 偏移量必须是非负的"
 
     lp, rp = input_offsets[:, 0], input_offsets[:, 1]
     lg, rg = target_offsets[:, 0], target_offsets[:, 1]
 
-    # intersection key points
+    # 交集关键点
     lkis = torch.min(lp, lg)
     rkis = torch.min(rp, rg)
 
@@ -149,12 +139,12 @@ def ctr_diou_loss_1d(
     unionk = (lp + rp) + (lg + rg) - intsctk
     iouk = intsctk / unionk.clamp(min=eps)
 
-    # smallest enclosing box
+    # 最小闭包框
     lc = torch.max(lp, lg)
     rc = torch.max(rp, rg)
     len_c = lc + rc
 
-    # offset between centers
+    # 中心点之间的偏移量
     rho = 0.5 * (rp - lp - rg + lg)
 
     # diou
