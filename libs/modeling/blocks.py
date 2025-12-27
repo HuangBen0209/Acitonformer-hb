@@ -706,10 +706,21 @@ class LocalBoundaryContrast(nn.Module):
     局部边界对比模块 (Local Boundary Contrast, LBC)
     与自注意力并行，显式生成边界显著性图，用于增强边界感知。
     """
-    def __init__(self, n_embd, window_size=5):
+    def __init__(self, n_embd, window_size=5,n_kv_stride=1):
         super().__init__()
         self.n_embd = n_embd
         self.window_size = window_size
+        self.n_kv_stride = n_kv_stride  # 新增：与注意力同步的stride
+
+        # 首先进行与query_conv相同的下采样
+        kernel_size = n_kv_stride + 1 if n_kv_stride > 1 else 3
+        stride, padding = n_kv_stride, kernel_size // 2
+
+        self.downsample_conv = MaskedConv1D(
+            n_embd, n_embd, kernel_size,
+            stride=stride, padding=padding, groups=n_embd, bias=False
+        )
+        self.downsample_norm = LayerNorm(n_embd)
 
         # 用于计算上下文差异的轻量卷积网络
         self.context_net = nn.Sequential(
@@ -723,31 +734,37 @@ class LocalBoundaryContrast(nn.Module):
     def forward(self, x, mask):
         """
         参数:
-            x: 输入特征 [B, C, T]
-            mask: 有效位置掩码 [B, 1, T] (bool)
+            x: 输入特征 [B, C, T_original]
+            mask: 原始mask [B, 1, T_original]
         返回:
-            boundary_attn: 边界显著性图 [B, T, 1] (经过Sigmoid，值域0-1)
+            boundary_attn: 边界显著性图 [B, 1, T_downsampled]
+            downsampled_mask: 下采样后的mask
         """
-        B, C, T = x.shape
-        mask_float = mask.to(x.dtype)
-        # 1. 一阶差分：捕捉变化强度
-        # 注意：对掩码区域进行填充，避免差分计算引入噪声
-        x_masked = x * mask_float
-        diff = x_masked[:, :, 1:] - x_masked[:, :, :-1]  # [B, C, T-1]
-        diff = F.pad(diff, (0, 1))  # [B, C, T]
-        # 计算L2范数作为变化强度标量
-        diff_strength = torch.norm(diff, dim=1, keepdim=True)  # [B, 1, T]
-        # 2. 上下文差异：捕捉变化质量
-        # 通过轻量网络计算每个时间点与其上下文的语义差异
-        context_diff = self.context_net(x)  # [B, 1, T]
-        # 3. 融合并生成显著性图
-        combined = torch.cat([diff_strength, context_diff], dim=1)  # [B, 2, T]
-        boundary_attn = torch.sigmoid(self.fusion(combined))  # [B, 1, T]
-        # 4. 确保无效位置（mask=False）的显著性为0
-        boundary_attn = boundary_attn * mask_float
-        # 转置为 [B, T, 1] 便于后续与特征加权（如果特征格式是B,C,T则无需转置）
-        # boundary_attn = boundary_attn.transpose(1, 2) # 根据后续融合方式决定
-        return boundary_attn
+        # 步骤1: 与ActionFormer注意力相同的下采样
+        x_down, mask_down = self.downsample_conv(x, mask)  # [B, C, T_down]
+        x_down = self.downsample_norm(x_down)
+        mask_down_float = mask_down.to(x_down.dtype)
+
+        # 步骤2: 在下采样后的特征上计算边界注意力
+        B, C, T_down = x_down.shape
+
+        # 一阶差分（在下采样空间）
+        x_masked = x_down * mask_down_float
+        diff = x_masked[:, :, 1:] - x_masked[:, :, :-1]
+        diff = F.pad(diff, (0, 1))
+        diff_strength = torch.norm(diff, dim=1, keepdim=True)
+
+        # 上下文差异（在下采样空间）
+        context_diff = self.context_net(x_down)
+
+        # 融合
+        combined = torch.cat([diff_strength, context_diff], dim=1)
+        boundary_attn = torch.sigmoid(self.fusion(combined))
+
+        # 应用下采样后的mask
+        boundary_attn = boundary_attn * mask_down_float
+
+        return boundary_attn, mask_down
 
 class TransformerBlock(nn.Module):
     """
@@ -770,7 +787,6 @@ class TransformerBlock(nn.Module):
         mha_win_size: >0时使用窗口注意力，-1表示使用全局注意力
         use_rel_pe: 是否在注意力中添加相对位置编码
     """
-
     def __init__(
             self,
             n_embd,  # 输入特征维度
@@ -793,6 +809,9 @@ class TransformerBlock(nn.Module):
         # 层归一化（适用于B, C, T顺序）
         self.ln1 = LayerNorm(n_embd)
         self.ln2 = LayerNorm(n_embd)
+
+
+        self.use_lbc= use_lbc
 
         # 选择注意力模块
         if mha_win_size > 1:
@@ -818,6 +837,14 @@ class TransformerBlock(nn.Module):
                 proj_pdrop=proj_pdrop
             )
 
+        #===新增==============LBC模块初始化=================
+        # 关键：传递与注意力相同的stride给LBC
+        self.lbc = LocalBoundaryContrast(
+            n_embd,
+            window_size=lbc_win_size,
+            n_kv_stride=n_ds_strides[1]  # 使用K/V的stride
+        )
+        self.lbc_gate = nn.Parameter(torch.tensor(lbc_fusion_gate, dtype=torch.float32))
         # 跳跃连接的下采样处理
         if n_ds_strides[0] > 1:
             # 当Q & X有下采样时，需要对跳跃连接也进行下采样
@@ -850,37 +877,25 @@ class TransformerBlock(nn.Module):
             self.drop_path_attn = nn.Identity()
             self.drop_path_mlp = nn.Identity()
 
-        #===新增==LBC模块初始化
-        self.use_lbc = use_lbc
-        if self.use_lbc:
-            self.lbc=LocalBoundaryContrast(n_embd,window_size=lbc_win_size)
-            # 可学习的融合门控参数
-            self.lbc_gate = nn.Parameter(torch.tensor(lbc_fusion_gate,dtype=torch.float32))
-
     def forward(self, x, mask, pos_embd=None):
         """
         前向传播
-
         采用Pre-LN结构：https://arxiv.org/pdf/2002.04745.pdf
         Pre-LN比传统的Post-LN更稳定，更容易训练深层的Transformer。
-
         采用 Pre-LN 结构: LN -> Attention -> + -> LN -> FFN -> +
         现在插入: LN -> (Attention 并行 LBC) -> 融合 -> + -> LN -> FFN ->+
-
         """
         #注意力路径
         attn_out, out_mask = self.attn(self.ln1(x), mask)
         out_mask_float = out_mask.to(attn_out.dtype)
         #边界感知增强路径 （与注意力路径并行）
         if self.use_lbc and self.training:
-            # 重要：使用与主义路径相同的归一化特征进行计算，确保输出一致
-            lbc_boundary_attn=self.lbc(self.ln1(x),mask) #得到边界显著性图 [B, T, 1]
-            # 将边界显著性图作为“注意力图的注意力”，加权到注意力输出上
-            # 使用门控参数控制增强强度，避免初期训练不稳定
+            lbc_boundary_attn, lbc_mask = self.lbc(self.ln1(x), mask) #得到边界显著性图 [B, T, 1]
 
+            assert torch.allclose(out_mask_float, lbc_mask.to(out_mask_float.dtype))
+            # 加权融合
             attn_out = attn_out * (1.0 + self.lbc_gate * lbc_boundary_attn)
-            # 可选：保存起来供损失函数使用
-            self._cache_boudary_attn=lbc_boundary_attn.detach()
+            self._cache_boundary_attn = lbc_boundary_attn.detach()
 
         # 残差连接 + DropPath
         # 注意：跳跃连接需要与注意力输出进行掩码对齐

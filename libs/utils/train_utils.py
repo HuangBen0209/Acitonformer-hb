@@ -100,26 +100,7 @@ def print_model_params(model):
 
 def make_optimizer(model, optimizer_config):
     """
-    构建优化器，支持SGD/AdamW，实现精细化的参数分组权重衰减策略
-    参数：
-        model (torch.nn.Module): 待优化的PyTorch模型
-        optimizer_config (dict): 优化器配置字典，结构如下：
-            {
-                "type": str,  # 优化器类型，可选"SGD"或"AdamW"
-                "learning_rate": float,  # 基础学习率
-                "weight_decay": float,  # 权重衰减系数（仅应用于指定参数）
-                "momentum": float,  # SGD专用，动量系数（AdamW无需此参数）
-            }
-    返回：
-        torch.optim.Optimizer: 配置好的PyTorch优化器
-    权重衰减分组规则：
-        1. 所有偏置（bias）参数：不施加权重衰减
-        2. 线性层(Linear)/1D卷积层(Conv1d)/MaskedConv1D的权重：施加权重衰减
-        3. 归一化层(LayerNorm/GroupNorm)的权重：不施加权重衰减
-        4. Scale/AffineDropPath层的scale参数：不施加权重衰减
-        5. 相对位置编码(rel_pe)参数：不施加权重衰减
-    验证逻辑：
-        确保所有参数仅属于"衰减"或"不衰减"一组，无重叠/遗漏
+    构建优化器 - 新增对lbc_gate参数的处理
     """
     # 分离需要/不需要权重衰减的参数集合
     decay = set()
@@ -129,11 +110,24 @@ def make_optimizer(model, optimizer_config):
     # 黑名单模块：权重不需要衰减
     blacklist_weight_modules = (LayerNorm, torch.nn.GroupNorm)
 
+    # 新增：识别是否包含lbc模块的标志
+    has_lbc_modules = False
+
     # 遍历模型所有模块和参数
     for mn, m in model.named_modules():
         for pn, p in m.named_parameters():
-            # 拼接完整参数名（模块名.参数名，根模块直接用参数名）
+            # 拼接完整参数名
             fpn = '%s.%s' % (mn, pn) if mn else pn
+
+            # ===== 新增：专门处理lbc_gate参数 =====
+            if 'lbc_gate' in pn:
+                # lbc_gate参数：不施加权重衰减
+                no_decay.add(fpn)
+                has_lbc_modules = True
+                continue  # 已处理，跳过后续判断
+            # ===== 结束新增 =====
+
+            # 原有分组逻辑保持不变
             if pn.endswith('bias'):
                 # 所有偏置参数不衰减
                 no_decay.add(fpn)
@@ -157,6 +151,13 @@ def make_optimizer(model, optimizer_config):
     assert len(inter_params) == 0, f"参数 {str(inter_params)} 同时出现在衰减/不衰减集合中！"
     assert len(param_dict.keys() - union_params) == 0, \
         f"参数 {str(param_dict.keys() - union_params)} 未被分配到任何分组！"
+    # 可选：打印调试信息，确认lbc_gate参数被正确分组
+    if has_lbc_modules:
+        print(f"[INFO] 检测到LBC模块，共找到 {len([p for p in param_dict.keys() if 'lbc_gate' in p])} 个lbc_gate参数")
+        for pn in sorted(param_dict.keys()):
+            if 'lbc_gate' in pn:
+                group = "不衰减组 (no_decay)" if pn in no_decay else "衰减组 (decay)"
+                print(f"  - {pn}: {group}")
 
     # 构建优化器参数组
     optim_groups = [
@@ -180,7 +181,6 @@ def make_optimizer(model, optimizer_config):
         raise TypeError("不支持的优化器类型！仅支持SGD/AdamW")
 
     return optimizer
-
 
 def make_scheduler(optimizer, optimizer_config, num_iters_per_epoch, last_epoch=-1):
     """

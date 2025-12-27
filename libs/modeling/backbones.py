@@ -26,6 +26,8 @@ class ConvTransformerBackbone(nn.Module):
     - attn_pdrop: 注意力图的dropout概率
     - proj_pdrop: 投影/MLP的dropout概率
     - path_pdrop: drop path的概率
+    - lbc_win_size=5,  LBC窗口大小,表示一次看多少帧
+    - lbc_fusion_gate=0.2,  LBC融合门控系数
     - use_abs_pe: 是否使用绝对位置编码
     - use_rel_pe: 是否使用相对位置编码
     """
@@ -44,8 +46,11 @@ class ConvTransformerBackbone(nn.Module):
             attn_pdrop=0.0,  # 注意力dropout概率
             proj_pdrop=0.0,  # 投影dropout概率
             path_pdrop=0.0,  # drop path概率
+            lbc_win_size=5, # LBC窗口大小
+            lbc_fusion_gate=0.2, # LBC融合门控系数
             use_abs_pe=False,  # 是否使用绝对位置编码
             use_rel_pe=False,  # 是否使用相对位置编码
+            use_lbc=False,  # 是否使用边界增强模块
     ):
         super().__init__()
         # 参数验证
@@ -61,6 +66,7 @@ class ConvTransformerBackbone(nn.Module):
         self.scale_factor = scale_factor
         self.use_abs_pe = use_abs_pe
         self.use_rel_pe = use_rel_pe
+        self.use_lbc = use_lbc
 
         # 特征投影层：如果输入是多特征，分别投影后拼接
         self.n_in = n_in
@@ -110,8 +116,11 @@ class ConvTransformerBackbone(nn.Module):
                     attn_pdrop=attn_pdrop,
                     proj_pdrop=proj_pdrop,
                     path_pdrop=path_pdrop,
+                    lbc_win_size=lbc_win_size,  # LBC窗口大小
+                    lbc_fusion_gate=lbc_fusion_gate, # LBC融合门控系数
                     mha_win_size=self.mha_win_size[0],  # stem使用第一个窗口大小
-                    use_rel_pe=self.use_rel_pe
+                    use_rel_pe=self.use_rel_pe,
+                    use_lbc=self.use_lbc, #LBC使用
                 )
             )
         # 主分支：使用带池化的Transformer块（降采样）
@@ -124,8 +133,11 @@ class ConvTransformerBackbone(nn.Module):
                     attn_pdrop=attn_pdrop,
                     proj_pdrop=proj_pdrop,
                     path_pdrop=path_pdrop,
+                    lbc_win_size=lbc_win_size,  # LBC窗口大小
+                    lbc_fusion_gate=lbc_fusion_gate,  # LBC融合门控系数
                     mha_win_size=self.mha_win_size[1 + idx],  # branch使用后续窗口大小
-                    use_rel_pe=self.use_rel_pe
+                    use_rel_pe=self.use_rel_pe,
+                    use_lbc=self.use_lbc, #LBC使用
                 )
             )
 

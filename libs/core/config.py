@@ -88,6 +88,8 @@ DEFAULTS = {
         "use_abs_pe": False,
         # 是否使用相对位置编码（相对位置编码添加到自注意力中，更适合长序列建模）
         "use_rel_pe": False,
+        # 是否使用LBC模块，增强边界区分能力
+        "use_lbc": True,
     },
     # 训练过程配置（损失函数、正则化、采样策略等）
     "train_cfg": {
@@ -107,8 +109,13 @@ DEFAULTS = {
         "head_empty_cls": [],
         # Transformer层的dropout比率（随机丢弃神经元，防止过拟合）
         "dropout": 0.0,
+
         # DropPath比率（随机丢弃网络路径，比dropout更温和的正则化方式）
         "droppath": 0.1,
+        #lbc 的窗口大小
+        "lbc_win_size" : 5,
+        # lbc 的融合权重
+        "lbc_fusion_gate" :0.2,
         # 标签平滑系数（>0时启用标签平滑，将硬标签转换为软标签，缓解过拟合）
         "label_smoothing": 0.0,
     },

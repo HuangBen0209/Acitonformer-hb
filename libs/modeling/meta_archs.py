@@ -181,6 +181,7 @@ class PtTransformer(nn.Module):
             head_with_ln,  # 是否在回归/分类头添加LayerNorm
             use_abs_pe,  # 是否使用绝对位置编码
             use_rel_pe,  # 是否使用相对位置编码
+            use_lbc,  # 是否使用LBC模块
             num_classes,  # 动作类别数
             train_cfg,  # 训练配置
             test_cfg  # 测试配置
@@ -220,6 +221,8 @@ class PtTransformer(nn.Module):
         self.train_cls_prior_prob = train_cfg['cls_prior_prob']
         self.train_dropout = train_cfg['dropout']
         self.train_droppath = train_cfg['droppath']
+        self.lbc_win_size = train_cfg['lbc_win_size']
+        self.lbc_fusion_gate = train_cfg['lbc_fusion_gate']
         self.train_label_smoothing = train_cfg['label_smoothing']
 
         # 测试时配置
@@ -254,8 +257,11 @@ class PtTransformer(nn.Module):
                     'attn_pdrop': 0.0,
                     'proj_pdrop': self.train_dropout,
                     'path_pdrop': self.train_droppath,
+                    'lbc_win_size':self.lbc_win_size ,
+                    'lbc_fusion_gate': self.lbc_fusion_gate,
                     'use_abs_pe': use_abs_pe,
-                    'use_rel_pe': use_rel_pe
+                    'use_rel_pe': use_rel_pe,
+                    'use_lbc': use_lbc,
                 }
             )
         else:

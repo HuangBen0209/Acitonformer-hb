@@ -25,6 +25,7 @@ model:
   n_mha_win_size: 19        # 滑动窗口 Transformer 的窗口大小（奇数），降低长序列计算量
   use_abs_pe: true      # 是否使用绝对位置编码
   use_rel_pe:  false   # 是否使用相对位置编码
+  use_lbc: true, # 是否使用边界增强模块LBC
 # ====================== 优化器 ======================
 opt:
   learning_rate: 0.0001
@@ -42,6 +43,8 @@ train_cfg:
   cls_prior_prob: 0.01        # 分类分支初始化偏置，使初始正负样本比例≈1:99，缓解样本不平衡
   center_sample: radius       # 如何定义“正样本”：radius 表示只把距真值中心 1.5 单位以内的 anchor 当做正
   center_sample_radius: 1.5   # 上面 radius 的具体值，单位是“特征帧”
+  lbc_win_size: 5
+  lbc_fusion_gate: 0.2
 
 # ====================== 测试/推理 ======================
 test_cfg:
